@@ -10,9 +10,23 @@ import {
     InterlocutorReplyMessage
 } from 'clustaar-webchat-sdk/lib/domain/messages';
 import { GiftedChat } from 'react-native-gifted-chat'
+
+import moment from 'moment';
+import md5 from 'crypto-js/md5';
+
 import { WEBCHAT_CONFIGURATION } from './constants/configuration'
 
-export default class App extends React.Component<{}, { messages: any[] }> {
+export const generateUniqueUserID = (userId) => {
+    const d = moment();
+    return md5(`${userId}_${d.format('YYYYMMDD_HHmmss')}`).toString();
+};
+
+export default class App extends React.Component<{}, {
+    messages: any[],
+    email: any,
+    socketToken: any,
+    interlocutorId: any,
+}> {
 
 
     clustaarWebchatSdkService = new ClustaarWebChatService({
@@ -30,7 +44,10 @@ export default class App extends React.Component<{}, { messages: any[] }> {
         super(props);
         const dimensions = Dimensions.get('window');
         this.state = {
-            messages: []
+            messages: [],
+            email: 'test4@yopmail.com', // whatever value needed to identify a user
+            socketToken: '',
+            interlocutorId: '',
         };
 
         this.height = dimensions.height;
@@ -39,11 +56,37 @@ export default class App extends React.Component<{}, { messages: any[] }> {
         this.clustaarWebchatSdkService.connect();
 
         this.clustaarWebchatSdkService.onConnectionState().subscribe((connectionState) => {
+            console.log('connection state: ', connectionState);
             this.connectionState = connectionState;
         });
 
-        this.join();
+        const url = `${WEBCHAT_CONFIGURATION.CLUSTAAR_API_URL}bots/${WEBCHAT_CONFIGURATION.BOT_ID}/interlocutors/clustaar_web_chat?use_websocket=true`;
+        const params = {
+          type: 'interlocutor',
+          userID: generateUniqueUserID(this.state.email),
+        };
 
+        fetch(url, {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+                Authorization: `Bearer ${WEBCHAT_CONFIGURATION.BOT_TOKEN}`,
+              },
+            body: JSON.stringify(params),
+        }).then((res) => res.json())
+        .then((res) => {
+            console.log('res: ', res);
+            if (
+                res.data
+                && res.data.id
+                && res.data.socketToken
+            ) {
+                this.setState({
+                    interlocutorId: res.data.id,
+                    socketToken: res.data.socketToken,
+                }, () => this.join())
+            }
+        });
     }
 
     render() {
@@ -83,12 +126,11 @@ export default class App extends React.Component<{}, { messages: any[] }> {
     }
 
     join() {
-
         // Initialize interlocutorChannel on join(). If the user logout (leave()), and connect with another account, an another interlocutorChannel is used.
         this.interlocutorChannel = this.clustaarWebchatSdkService.interlocutorChannel({
             botID: WEBCHAT_CONFIGURATION.BOT_ID,
-            interlocutorID: WEBCHAT_CONFIGURATION.INTERLOCUTOR_ID,
-            socketToken: WEBCHAT_CONFIGURATION.SOCKET_TOKEN
+            interlocutorID: this.state.interlocutorId,
+            socketToken: this.state.socketToken,
         });
 
         // Create a subject to be able to destroy interlocutorChannel observables on leave().
